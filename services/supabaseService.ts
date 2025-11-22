@@ -1,4 +1,3 @@
-
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { Product, Feature, Testimonial, FAQItem, SiteContent, Article, NewTestimonial } from '../types';
 
@@ -45,6 +44,7 @@ create table if not exists public.products (
   in_stock boolean default true
 );
 alter table public.products enable row level security;
+drop policy if exists "Public Read Products" on public.products;
 create policy "Public Read Products" on public.products for select using (true);
 
 insert into public.products (id, name_en, name_ar, description_en, description_ar, price, volume_ml, image_url, is_featured) values 
@@ -64,6 +64,7 @@ create table if not exists public.articles (
   created_at timestamp with time zone default timezone('utc'::text, now()) not null
 );
 alter table public.articles enable row level security;
+drop policy if exists "Public Read Articles" on public.articles;
 create policy "Public Read Articles" on public.articles for select using (true);
 
 insert into public.articles (id, title_en, title_ar, excerpt_en, excerpt_ar, content_en, content_ar, image_url, created_at) values 
@@ -102,6 +103,7 @@ create table if not exists public.features (
   sort_order int default 0
 );
 alter table public.features enable row level security;
+drop policy if exists "Public Read Features" on public.features;
 create policy "Public Read Features" on public.features for select using (true);
 
 insert into public.features (id, title_en, title_ar, desc_en, desc_ar, icon_key, sort_order) values
@@ -124,9 +126,11 @@ create table if not exists public.testimonials (
 );
 alter table public.testimonials enable row level security;
 
+drop policy if exists "Public Read Testimonials" on public.testimonials;
 -- Policy for Reading (Only approved ones)
 create policy "Public Read Testimonials" on public.testimonials for select using (is_approved = true);
 
+drop policy if exists "Public Insert Testimonials" on public.testimonials;
 -- Policy for Inserting (Public can insert, but default is_approved=false)
 create policy "Public Insert Testimonials" on public.testimonials for insert with check (true);
 
@@ -145,6 +149,7 @@ create table if not exists public.faqs (
   sort_order int default 0
 );
 alter table public.faqs enable row level security;
+drop policy if exists "Public Read FAQs" on public.faqs;
 create policy "Public Read FAQs" on public.faqs for select using (true);
 
 insert into public.faqs (id, question_en, question_ar, answer_en, answer_ar, sort_order) values
@@ -161,6 +166,7 @@ create table if not exists public.site_content (
   value_ar text
 );
 alter table public.site_content enable row level security;
+drop policy if exists "Public Read Content" on public.site_content;
 create policy "Public Read Content" on public.site_content for select using (true);
 
 insert into public.site_content (key, value_en, value_ar) values
@@ -182,8 +188,12 @@ insert into public.site_content (key, value_en, value_ar) values
 ('story_badge', '1985', '1985'),
 ('story_signature_name', 'Zaid Al-Zaytoun', 'زيد الزيتون'),
 ('story_signature_role', 'Founder', 'المؤسس'),
-('social_instagram', '@zaytounahouse', '@zaytounahouse')
-ON CONFLICT (key) DO NOTHING;
+('social_instagram', '@zaytounahouse', '@zaytounahouse'),
+('social_facebook_url', 'https://www.facebook.com', 'https://www.facebook.com'),
+('social_instagram_url', 'https://www.instagram.com', 'https://www.instagram.com')
+ON CONFLICT (key) DO UPDATE 
+SET value_en = EXCLUDED.value_en,
+    value_ar = EXCLUDED.value_ar;
 `;
 
 let supabase: SupabaseClient | null = null;
@@ -220,7 +230,7 @@ const fetchData = async <T>(table: string, orderBy?: string, limit?: number, fil
   const { data, error } = await query;
 
   if (error) {
-    if (error.code === 'PGRST205') {
+    if (error.code === 'PGRST205' || error.code === '42P01') {
       console.warn(`⚠️ Table '${table}' missing in Supabase. Run the SETUP_SQL.`);
     } else {
       console.error(`Error fetching ${table}:`, JSON.stringify(error, null, 2));
@@ -287,6 +297,9 @@ export const getFAQs = async (): Promise<FAQItem[]> => {
 export const getSiteContent = async (): Promise<SiteContent[]> => {
   if (!supabase) return [];
   const { data, error } = await supabase.from('site_content').select('*');
-  if (error) return [];
+  if (error) {
+    console.error("Error fetching site_content:", error);
+    return [];
+  }
   return data as SiteContent[];
 };
